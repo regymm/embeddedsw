@@ -18,9 +18,9 @@
  */
 
 #include <stdio.h>
+#include <unistd.h>
 #include "platform.h"
 #include "xil_printf.h"
-
 
 int main()
 {
@@ -28,6 +28,20 @@ int main()
 
     print("Hello World\n\r");
     print("Successfully ran Hello World application");
+
+#ifdef AXI_TEST
+	volatile int* gpioaddr = (volatile int*)0x41200000;
+    *gpioaddr = 0xffffffff;
+    print("AXI GPIO set.\n\r");
+    while (1) {
+    	usleep(1000000);
+    	*gpioaddr = 0x5;
+    	usleep(1000000);
+    	*gpioaddr = 0xa;
+    	printf("Hello\n");
+    }
+#endif
+
     cleanup_platform();
     return 0;
 }
