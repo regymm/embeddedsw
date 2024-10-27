@@ -286,11 +286,12 @@ int main(void)
 			SDK_RELEASE_YEAR, SDK_RELEASE_QUARTER,
 			__DATE__,__TIME__);
 
-#if defined(XPAR_PS7_DDR_0_S_AXI_BASEADDR) || defined(XPAR_PS7_DDR_0_BASEADDRESS)
+#if defined(XPAR_PS7_DDR_0_S_AXI_BASEADDR) || defined(XPAR_PS7_DDR_0_BASEADDRESS) || defined(NODDR)
 
     /*
      * DDR Read/write test 
      */
+#ifndef NODDR
 	Status = DDRInitCheck();
 	if (Status == XST_FAILURE) {
 		fsbl_printf(DEBUG_GENERAL,"DDR_INIT_FAIL \r\n");
@@ -302,6 +303,7 @@ int main(void)
 		 */
 		FsblHookFallback();
 	}
+#endif
 
 
 	/*

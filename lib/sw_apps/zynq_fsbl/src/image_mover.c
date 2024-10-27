@@ -397,6 +397,7 @@ u32 LoadBootImage(void)
 		 * Loop will break when PS load address zero and partition is
 		 * un-signed or un-encrypted
 		 */
+#ifndef NODDR
 		if ((PSPartitionFlag == 1) && (PartitionLoadAddr < DDR_START_ADDR)) {
 			if ((PartitionLoadAddr == 0) &&
 					(!((SignedPartitionFlag == 1) ||
@@ -416,6 +417,7 @@ u32 LoadBootImage(void)
 			OutputStatus(INVALID_LOAD_ADDRESS_FAIL);
 			FsblFallback();
 		}
+#endif
 
         /*
          * Load execution address of first PS partition
@@ -428,7 +430,16 @@ u32 LoadBootImage(void)
 		/*
 		 * FSBL user hook call before bitstream download
 		 */
-		if (PLPartitionFlag) {
+		if ((PLPartitionFlag
+#ifdef NODDR
+				&& !SignedPartitionFlag) || (!PLPartitionFlag &&
+          		((PartitionExecAddr != 0 && ((PartitionExecAddr < XPAR_PS7_QSPI_0_BASEADDR) ||
+          				(PartitionExecAddr > XPAR_PS7_QSPI_0_HIGHADDR))) ||
+				// TODO: the above two addr is not correct (but not used)
+           	((PartitionLoadAddr >= 0xFFFF0000) && (PartitionExecAddr == 0)) ||
+       	 	((PartitionLoadAddr == 0x40000000) && (PartitionExecAddr == 0)))
+#endif
+				)) {
 			Status = FsblHookBeforeBitstreamDload();
 			if (Status != XST_SUCCESS) {
 				fsbl_printf(DEBUG_GENERAL,"FSBL_BEFORE_BSTREAM_HOOK_FAIL\r\n");
@@ -1122,7 +1133,11 @@ u32 PartitionMove(u32 ImageBaseAddress, PartHeader *Header)
 	 * CPU is used for data transfer in case of non-linear
 	 * boot device
 	 */
-	if (!LinearBootDeviceFlag) {
+	if (!LinearBootDeviceFlag
+#ifdef NODDR
+			&& !PLPartitionFlag
+#endif
+			) {
 		/*
 		 * PL partition copied to DDR temporary location
 		 */
