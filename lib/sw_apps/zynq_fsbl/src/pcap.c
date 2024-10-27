@@ -72,6 +72,7 @@
 
 #include "pcap.h"
 #include "nand.h"		/* For NAND geometry information */
+#include "sd.h" /* For NODDR SD boot check */
 #include "fsbl.h"
 #include "image_mover.h"	/* For MoveImage */
 #include "xparameters.h"
@@ -111,6 +112,7 @@ extern int XDcfgPollDone(u32 MaskValue, u32 MaxCount);
 static XDcfg DcfgInstance;
 XDcfg *DcfgInstPtr;
 extern u32 Silicon_Version;
+extern ImageMoverType MoveImage;
 #ifdef XPAR_XWDTPS_0_BASEADDR
 extern XWdtPs Watchdog;	/* Instance of WatchDog Timer	*/
 #endif
@@ -296,9 +298,50 @@ u32 PcapLoadPartition(u32 *SourceDataPtr, u32 *DestinationDataPtr,
 	/*
 	 * PCAP single DMA transfer setup
 	 */
+	fsbl_printf(DEBUG_INFO,"*PCAP single DMA transfer setup from %08x to %08x, source/destination length %d/%d \r\n",
+			SourceDataPtr, DestinationDataPtr, SourceLength, DestinationLength);
 	SourceDataPtr = (u32*)((u32)SourceDataPtr | PCAP_LAST_TRANSFER);
 	DestinationDataPtr = (u32*)((u32)DestinationDataPtr | PCAP_LAST_TRANSFER);
 
+#ifdef NODDR
+	// in case of SD card, we have to transfer in small blocks that fits into OCM
+	// the 64 KB Application OCM seems very convenient, and would work as long as
+	// .bit is loaded before user application.
+	int chunk = 0x4000; // max 0x4000 is OCM App Data size
+	int i = 0;
+	while (SourceLength > 0) { // will go to == 0
+		if (SourceLength < chunk) {
+			chunk = SourceLength;
+		}
+		if (MoveImage == SDAccess) {
+			fsbl_printf(DEBUG_INFO,"*Performing NODDR SD boot \r\n");
+			SDAccess((u32)SourceDataPtr&0xfffffffe, 0xffff0000, chunk << WORD_LENGTH_SHIFT);
+			if(Status != XST_SUCCESS) {
+				fsbl_printf(DEBUG_GENERAL, "SDAccess at %08x Failed\r\n", (u32)SourceDataPtr&0xfffffffe);
+				return XST_FAILURE;
+			}
+			Status = XDcfg_Transfer(DcfgInstPtr, (u8 *)(0xffff0000|0x1),
+							chunk,
+							(u8 *)((u32)DestinationDataPtr),
+							chunk, PcapTransferType);
+		} else {
+			Status = XDcfg_Transfer(DcfgInstPtr, (u8 *)((u32)SourceDataPtr),
+							chunk,
+							(u8 *)((u32)DestinationDataPtr),
+							chunk, PcapTransferType);
+		}
+
+		Status = XDcfgPollDone(XDCFG_IXR_DMA_DONE_MASK, MAX_COUNT);
+		if (Status != XST_SUCCESS) {
+			fsbl_printf(DEBUG_INFO,"PCAP_DMA_DONE_FAIL \r\n");
+			return XST_FAILURE;
+		}
+		SourceLength -= chunk;
+		SourceDataPtr += chunk;
+		i++;
+	}
+	fsbl_printf(DEBUG_INFO,"*%d DMAs finished\r\n", i);
+#else
 	/*
 	 * Transfer using Device Configuration
 	 */
@@ -328,6 +371,7 @@ u32 PcapLoadPartition(u32 *SourceDataPtr, u32 *DestinationDataPtr,
 	}
 
 	fsbl_printf(DEBUG_INFO,"DMA Done ! \n\r");
+#endif
 
 	/*
 	 * Poll for FPGA Done
