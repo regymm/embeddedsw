@@ -1,0 +1,6 @@
+cpu_cortexa9
+devcfg
+gpiops
+qspips
+sdps
+uartps
